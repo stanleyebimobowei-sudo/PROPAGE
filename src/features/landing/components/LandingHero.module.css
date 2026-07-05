@@ -1,0 +1,281 @@
+.heroShell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: linear-gradient(180deg, #1c1917 0%, #111110 55%, #0a0a0a 100%);
+}
+
+.heroGlow {
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  z-index: 0;
+  width: min(700px, 120vw);
+  height: 600px;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(245, 158, 11, 0.18) 0%,
+    rgba(245, 158, 11, 0.06) 45%,
+    transparent 70%
+  );
+  transform: translateX(-50%);
+}
+
+.desktopHero {
+  position: relative;
+  z-index: 1;
+  display: none;
+  min-height: 100vh;
+}
+
+.mobileHero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.verticalRule {
+  position: absolute;
+  top: 15%;
+  right: 0;
+  width: 1px;
+  height: 70%;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(245, 158, 11, 0.15) 30%,
+    rgba(52, 211, 153, 0.1) 70%,
+    transparent 100%
+  );
+}
+
+.heroDivider {
+  width: 48px;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, #f59e0b, #34d399);
+}
+
+.carouselPanel {
+  position: relative;
+  display: flex;
+  width: 50%;
+  height: 100vh;
+  align-items: stretch;
+  gap: 14px;
+  overflow: hidden;
+  padding: 0 32px 0 20px;
+}
+
+.topFade,
+.bottomFade,
+.leftFade,
+.rightFade,
+.sideGlow,
+.cardGlow {
+  pointer-events: none;
+}
+
+.topFade {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 10;
+  height: 120px;
+  background: linear-gradient(180deg, #1c1917 0%, transparent 100%);
+}
+
+.bottomFade {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 10;
+  height: 140px;
+  background: linear-gradient(0deg, #0a0a0a 0%, transparent 100%);
+}
+
+.sideGlow {
+  position: absolute;
+  top: 50%;
+  left: -20px;
+  z-index: 5;
+  width: 60px;
+  height: 50%;
+  background: radial-gradient(ellipse at left center, rgba(52, 211, 153, 0.06) 0%, transparent 70%);
+  transform: translateY(-50%);
+}
+
+.scrollUpFast {
+  animation: scrollUp 30s linear infinite;
+}
+
+.scrollDownMedium {
+  animation: scrollDown 26s linear infinite;
+}
+
+.marqueeLeft {
+  animation: marqueeLeft 22s linear infinite;
+}
+
+.marqueeRight {
+  animation: marqueeRight 18s linear infinite;
+}
+
+.cardGlow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 60%);
+}
+
+.imageOverlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 40%, rgba(10, 10, 10, 0.85) 100%);
+}
+
+.leftFade {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 10;
+  width: 48px;
+  background: linear-gradient(90deg, #1c1917 0%, transparent 100%);
+}
+
+.rightFade {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 10;
+  width: 48px;
+  background: linear-gradient(270deg, #0a0a0a 0%, transparent 100%);
+}
+
+.mobilePremiumGlow {
+  position: absolute;
+  inset: 18% 0 auto;
+  height: 260px;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0.05) 45%, transparent 72%),
+    radial-gradient(ellipse at 70% 58%, rgba(52, 211, 153, 0.08) 0%, transparent 60%);
+}
+
+.mobilePremiumViewport {
+  position: relative;
+  overflow: visible;
+  padding: 18px 0 30px;
+}
+
+.mobilePremiumTrack {
+  display: flex;
+  width: max-content;
+  gap: 18px;
+  margin-left: calc((100vw - min(74vw, 320px)) / 2);
+  animation: mobilePremiumLoop 30s linear infinite;
+  will-change: transform;
+}
+
+.mobilePremiumSlide {
+  width: min(74vw, 320px);
+  flex: 0 0 auto;
+}
+
+.mobilePremiumCard {
+  position: relative;
+  display: flex;
+  height: clamp(340px, 88vw, 410px);
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid rgba(245, 158, 11, 0.16);
+  border-radius: 32px;
+  background: linear-gradient(145deg, rgba(28, 25, 23, 0.98) 0%, rgba(10, 10, 10, 0.98) 100%);
+  box-shadow:
+    0 34px 80px rgba(0, 0, 0, 0.58),
+    0 18px 48px rgba(245, 158, 11, 0.16),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  transform: translateZ(0);
+}
+
+.mobilePremiumSlide:nth-child(4n + 1) .mobilePremiumCard {
+  transform: translateY(-4px) scale(1.015);
+}
+
+.mobilePremiumImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 22%;
+}
+
+@keyframes scrollUp {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+@keyframes scrollDown {
+  from {
+    transform: translateY(-50%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes marqueeLeft {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes marqueeRight {
+  from {
+    transform: translateX(-50%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes mobilePremiumLoop {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(calc(-50% - 9px));
+  }
+}
+
+@media (min-width: 901px) {
+  .desktopHero {
+    display: flex;
+    flex-direction: row;
+  }
+
+  .mobileHero {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrollUpFast,
+  .scrollDownMedium,
+  .marqueeLeft,
+  .marqueeRight,
+  .mobilePremiumTrack {
+    animation-play-state: paused;
+  }
+}
