@@ -27,13 +27,14 @@ import {
   getAdminExpenses,
   getAdminOrders,
   getAdminSettings,
-  getThankYouUrl,
   getTotalStartupCapital,
   isSameDay,
   isSameMonth,
+  loadAdminSettings,
   parseMoney,
   saveAdminSettings,
   updateAdminOrderStatus,
+  type AdminSettings,
   type AdminExpense,
   type AdminEvent,
   type AdminOrder,
@@ -91,6 +92,10 @@ function copyToClipboard(value: string, label = 'Content') {
     .catch(() => notifyAdmin('Copy failed. Please try again.', 'danger'))
 }
 
+function notifyAdminError(error: unknown) {
+  notifyAdmin(error instanceof Error ? error.message : 'Supabase action failed. Please try again.', 'danger')
+}
+
 function useAdminToasts() {
   const [toasts, setToasts] = useState<AdminToast[]>([])
 
@@ -120,21 +125,45 @@ function useAdminData() {
   const [orders, setOrders] = useState<AdminOrder[]>([])
   const [expenses, setExpenses] = useState<AdminExpense[]>([])
   const [events, setEvents] = useState<AdminEvent[]>([])
+  const [settings, setSettings] = useState<AdminSettings>(getAdminSettings())
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    const refresh = () => {
-      setOrders(getAdminOrders())
-      setExpenses(getAdminExpenses())
-      setEvents(getAdminEvents())
+    let active = true
+
+    const refresh = async () => {
+      try {
+        setError('')
+        const [nextOrders, nextExpenses, nextEvents, nextSettings] = await Promise.all([getAdminOrders(), getAdminExpenses(), getAdminEvents(), loadAdminSettings()])
+        if (!active) {
+          return
+        }
+        setOrders(nextOrders)
+        setExpenses(nextExpenses)
+        setEvents(nextEvents)
+        setSettings(nextSettings)
+      } catch (fetchError) {
+        if (active) {
+          setError(fetchError instanceof Error ? fetchError.message : 'Unable to load Supabase admin data.')
+        }
+      } finally {
+        if (active) {
+          setLoading(false)
+        }
+      }
     }
 
-    refresh()
+    void refresh()
     window.addEventListener('admin:data-changed', refresh)
 
-    return () => window.removeEventListener('admin:data-changed', refresh)
+    return () => {
+      active = false
+      window.removeEventListener('admin:data-changed', refresh)
+    }
   }, [])
 
-  return { orders, expenses, events }
+  return { orders, expenses, events, settings, loading, error }
 }
 
 function orderRevenue(order: AdminOrder) {
@@ -481,10 +510,10 @@ function DashboardPage({ orders, expenses, events, setActivePage }: { orders: Ad
 function OrderDetail({ order, onClose }: { order: AdminOrder; onClose: () => void }) {
   const [expenseAmount, setExpenseAmount] = useState('')
   const [expensePurpose, setExpensePurpose] = useState('')
-  const addOrderExpense = () => {
+  const addOrderExpense = async () => {
     const parsed = Number(expenseAmount)
     if (!parsed || !expensePurpose.trim()) return false
-    addAdminExpense(parsed, expensePurpose.trim(), order.id)
+    await addAdminExpense(parsed, expensePurpose.trim(), order.id)
     setExpenseAmount('')
     setExpensePurpose('')
     return true
@@ -536,9 +565,14 @@ function OrderDetail({ order, onClose }: { order: AdminOrder; onClose: () => voi
         <button
           type="button"
           onClick={() => {
-            if (addOrderExpense()) {
-              notifyAdmin('Expense saved.', 'success')
-            }
+            void addOrderExpense()
+              .then((saved) => {
+                if (!saved) {
+                  return
+                }
+                notifyAdmin('Expense saved.', 'success')
+              })
+              .catch(notifyAdminError)
           }}
           className="mt-3 min-h-11 w-full rounded-full bg-gold-500 text-xs font-black uppercase tracking-[0.12em] text-ink-950"
         >
@@ -555,8 +589,9 @@ function OrderDetail({ order, onClose }: { order: AdminOrder; onClose: () => voi
             className="admin-action-button"
             key={status}
             onClick={() => {
-              updateAdminOrderStatus(order.id, status)
-              notifyAdmin(`Order marked ${status}.`, 'success')
+              void updateAdminOrderStatus(order.id, status)
+                .then(() => notifyAdmin(`Order marked ${status}.`, 'success'))
+                .catch(notifyAdminError)
             }}
           >
             Mark {status}
@@ -566,8 +601,9 @@ function OrderDetail({ order, onClose }: { order: AdminOrder; onClose: () => voi
           type="button"
           className="admin-action-button"
           onClick={() => {
-            updateAdminOrderStatus(order.id, 'Failed Delivery')
-            notifyAdmin('Order marked failed delivery.', 'success')
+            void updateAdminOrderStatus(order.id, 'Failed Delivery')
+              .then(() => notifyAdmin('Order marked failed delivery.', 'success'))
+              .catch(notifyAdminError)
           }}
         >
           Failed Delivery
@@ -576,9 +612,12 @@ function OrderDetail({ order, onClose }: { order: AdminOrder; onClose: () => voi
           type="button"
           className="admin-action-button text-red-300"
           onClick={() => {
-            deleteAdminOrder(order.id)
-            notifyAdmin('Order deleted.', 'danger')
-            onClose()
+            void deleteAdminOrder(order.id)
+              .then(() => {
+                notifyAdmin('Order deleted.', 'danger')
+                onClose()
+              })
+              .catch(notifyAdminError)
           }}
         >
           <Trash2 className="size-4" /> Delete Order
@@ -767,8 +806,8 @@ function AnalyticsPage({ orders, events, expenses }: { orders: AdminOrder[]; eve
   )
 }
 
-function FinancePage({ orders, expenses }: { orders: AdminOrder[]; expenses: AdminExpense[] }) {
-  const startupCapital = getTotalStartupCapital()
+function FinancePage({ orders, expenses, settings }: { orders: AdminOrder[]; expenses: AdminExpense[]; settings: AdminSettings }) {
+  const startupCapital = getTotalStartupCapital(settings)
   const expectedRevenue = sumOrderRevenue(orders, isExpectedOrder)
   const deliveredRevenue = sumOrderRevenue(orders, isDeliveredOrder)
   const outstandingRevenue = sumOrderRevenue(orders, (order) => order.status === 'Outstanding')
@@ -808,10 +847,10 @@ function ExpensesPage({ expenses }: { expenses: AdminExpense[] }) {
   const weeklyTotal = expenses.filter((expense) => Date.now() - new Date(expense.createdAt).getTime() < 7 * 86400000).reduce((sum, expense) => sum + expense.amount, 0)
   const monthlyTotal = expenses.filter((expense) => isSameMonth(expense.createdAt)).reduce((sum, expense) => sum + expense.amount, 0)
 
-  const save = () => {
+  const save = async () => {
     const parsed = Number(amount)
     if (!parsed || !purpose.trim()) return
-    addAdminExpense(parsed, purpose.trim())
+    await addAdminExpense(parsed, purpose.trim())
     setAmount('')
     setPurpose('')
     notifyAdmin('Expense saved.', 'success')
@@ -823,7 +862,7 @@ function ExpensesPage({ expenses }: { expenses: AdminExpense[] }) {
         <h3 className="text-2xl font-black text-white">Add Expense</h3>
         <input value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^\d]/g, ''))} className="admin-input mt-5" placeholder="Amount (NGN)" />
         <input value={purpose} onChange={(event) => setPurpose(event.target.value)} className="admin-input mt-3" placeholder="Purpose" />
-        <button type="button" onClick={save} className="mt-4 min-h-12 w-full rounded-full bg-gold-500 text-sm font-black uppercase tracking-[0.12em] text-ink-950">
+        <button type="button" onClick={() => void save().catch(notifyAdminError)} className="mt-4 min-h-12 w-full rounded-full bg-gold-500 text-sm font-black uppercase tracking-[0.12em] text-ink-950">
           Save
         </button>
       </section>
@@ -847,17 +886,25 @@ function ExpensesPage({ expenses }: { expenses: AdminExpense[] }) {
   )
 }
 
-function SettingsPage({ orders, expenses, events }: { orders: AdminOrder[]; expenses: AdminExpense[]; events: AdminEvent[] }) {
-  const settings = getAdminSettings()
+function SettingsPage({ orders, expenses, events, settings }: { orders: AdminOrder[]; expenses: AdminExpense[]; events: AdminEvent[]; settings: AdminSettings }) {
   const [endpoint, setEndpoint] = useState(settings.formspreeEndpoint)
   const [pixelId, setPixelId] = useState(settings.facebookPixelId)
   const [thankYouPath, setThankYouPath] = useState(settings.thankYouPath)
   const [startupCapital, setStartupCapital] = useState(String(settings.startupCapital))
   const [packagePrices, setPackagePrices] = useState(settings.packagePrices)
-  const thankYouUrl = getThankYouUrl()
+  const normalizedThankYouPath = thankYouPath.trim() || '/thank-you'
+  const thankYouUrl = `${window.location.origin}${normalizedThankYouPath.startsWith('/') ? normalizedThankYouPath : `/${normalizedThankYouPath}`}`
 
-  const save = () => {
-    saveAdminSettings({
+  useEffect(() => {
+    setEndpoint(settings.formspreeEndpoint)
+    setPixelId(settings.facebookPixelId)
+    setThankYouPath(settings.thankYouPath)
+    setStartupCapital(String(settings.startupCapital))
+    setPackagePrices(settings.packagePrices)
+  }, [settings])
+
+  const save = async () => {
+    await saveAdminSettings({
       ...settings,
       formspreeEndpoint: endpoint.trim(),
       facebookPixelId: pixelId.trim(),
@@ -906,7 +953,7 @@ function SettingsPage({ orders, expenses, events }: { orders: AdminOrder[]; expe
         <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-gold-500">Finance Settings</p>
         <h3 className="mt-2 text-2xl font-black text-white">Startup Capital</h3>
         <input value={startupCapital} onChange={(event) => setStartupCapital(event.target.value.replace(/[^\d]/g, ''))} className="admin-input mt-5" placeholder="Startup capital" />
-        <p className="mt-3 text-sm font-bold text-stone-400">Current total with top-ups: {formatMoney(getTotalStartupCapital())}</p>
+        <p className="mt-3 text-sm font-bold text-stone-400">Current total with top-ups: {formatMoney(getTotalStartupCapital(settings))}</p>
       </section>
 
       <section className="rounded-[30px] border border-white/10 bg-white/[0.045] p-5 xl:col-span-2">
@@ -941,7 +988,7 @@ function SettingsPage({ orders, expenses, events }: { orders: AdminOrder[]; expe
         </div>
       </section>
 
-      <button type="button" onClick={save} className="min-h-13 rounded-full bg-gold-500 px-6 text-sm font-black uppercase tracking-[0.12em] text-ink-950 xl:col-span-2">
+      <button type="button" onClick={() => void save().catch(notifyAdminError)} className="min-h-13 rounded-full bg-gold-500 px-6 text-sm font-black uppercase tracking-[0.12em] text-ink-950 xl:col-span-2">
         Save Settings
       </button>
     </div>
@@ -1026,14 +1073,13 @@ function NewOrdersNotice({
   )
 }
 
-function ProfilePage({ orders, expenses, events }: { orders: AdminOrder[]; expenses: AdminExpense[]; events: AdminEvent[] }) {
+function ProfilePage({ orders, expenses, events, settings }: { orders: AdminOrder[]; expenses: AdminExpense[]; events: AdminEvent[]; settings: AdminSettings }) {
   const [topUpAmount, setTopUpAmount] = useState('')
   const [topUpNote, setTopUpNote] = useState('')
-  const settings = getAdminSettings()
-  const saveTopUp = () => {
+  const saveTopUp = async () => {
     const parsed = Number(topUpAmount)
     if (!parsed) return
-    addCapitalTopUp(parsed, topUpNote.trim() || 'Capital top-up')
+    await addCapitalTopUp(parsed, topUpNote.trim() || 'Capital top-up', settings)
     setTopUpAmount('')
     setTopUpNote('')
     notifyAdmin('Capital top-up saved.', 'success')
@@ -1049,7 +1095,7 @@ function ProfilePage({ orders, expenses, events }: { orders: AdminOrder[]; expen
         </p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <StatCard label="Base Startup Capital" value={formatMoney(settings.startupCapital)} />
-          <StatCard label="Capital With Top-ups" value={formatMoney(getTotalStartupCapital())} tone="gold" />
+          <StatCard label="Capital With Top-ups" value={formatMoney(getTotalStartupCapital(settings))} tone="gold" />
         </div>
       </section>
 
@@ -1057,7 +1103,7 @@ function ProfilePage({ orders, expenses, events }: { orders: AdminOrder[]; expen
         <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-gold-500">Top Up Capital</p>
         <input value={topUpAmount} onChange={(event) => setTopUpAmount(event.target.value.replace(/[^\d]/g, ''))} className="admin-input mt-5" placeholder="Top-up amount" />
         <input value={topUpNote} onChange={(event) => setTopUpNote(event.target.value)} className="admin-input mt-3" placeholder="Note" />
-        <button type="button" onClick={saveTopUp} className="mt-4 min-h-12 rounded-full bg-gold-500 px-6 text-sm font-black uppercase tracking-[0.12em] text-ink-950">
+        <button type="button" onClick={() => void saveTopUp().catch(notifyAdminError)} className="mt-4 min-h-12 rounded-full bg-gold-500 px-6 text-sm font-black uppercase tracking-[0.12em] text-ink-950">
           Top Up
         </button>
       </section>
@@ -1098,7 +1144,7 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
   const [initialStatus, setInitialStatus] = useState<AdminOrderStatus | 'all'>('all')
   const [showNewOrdersNotice, setShowNewOrdersNotice] = useState(false)
   const [newOrdersNoticeShown, setNewOrdersNoticeShown] = useState(false)
-  const { orders, expenses, events } = useAdminData()
+  const { orders, expenses, events, settings, loading, error } = useAdminData()
   const toasts = useAdminToasts()
   const newOrdersCount = orders.filter((order) => order.status === 'New').length
 
@@ -1150,18 +1196,28 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
         </header>
 
         <main className="p-4 lg:p-6">
-          <AnimatePresence mode="wait">
-            <motion.div key={activePage} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.24 }}>
-              {activePage === 'dashboard' ? <DashboardPage orders={orders} expenses={expenses} events={events} setActivePage={setActivePage} /> : null}
-              {activePage === 'orders' ? <OrdersPage orders={orders} initialStatus={initialStatus} /> : null}
-              {activePage === 'analytics' ? <AnalyticsPage orders={orders} events={events} expenses={expenses} /> : null}
-              {activePage === 'finance' ? <FinancePage orders={orders} expenses={expenses} /> : null}
-              {activePage === 'expenses' ? <ExpensesPage expenses={expenses} /> : null}
-              {activePage === 'settings' ? <SettingsPage orders={orders} expenses={expenses} events={events} /> : null}
-              {activePage === 'notifications' ? <NotificationsPage orders={orders} setActivePage={setActivePage} setInitialStatus={setInitialStatus} /> : null}
-              {activePage === 'profile' ? <ProfilePage orders={orders} expenses={expenses} events={events} /> : null}
-            </motion.div>
-          </AnimatePresence>
+          {loading ? (
+            <div className="rounded-[28px] border border-white/10 bg-white/[0.045] p-6 text-sm font-bold text-stone-300">Loading Supabase admin data...</div>
+          ) : null}
+          {error ? (
+            <div className="rounded-[28px] border border-red-400/25 bg-red-500/10 p-6 text-sm font-bold leading-6 text-red-100">
+              {error}
+            </div>
+          ) : null}
+          {!loading && !error ? (
+            <AnimatePresence mode="wait">
+              <motion.div key={activePage} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.24 }}>
+                {activePage === 'dashboard' ? <DashboardPage orders={orders} expenses={expenses} events={events} setActivePage={setActivePage} /> : null}
+                {activePage === 'orders' ? <OrdersPage orders={orders} initialStatus={initialStatus} /> : null}
+                {activePage === 'analytics' ? <AnalyticsPage orders={orders} events={events} expenses={expenses} /> : null}
+                {activePage === 'finance' ? <FinancePage orders={orders} expenses={expenses} settings={settings} /> : null}
+                {activePage === 'expenses' ? <ExpensesPage expenses={expenses} /> : null}
+                {activePage === 'settings' ? <SettingsPage orders={orders} expenses={expenses} events={events} settings={settings} /> : null}
+                {activePage === 'notifications' ? <NotificationsPage orders={orders} setActivePage={setActivePage} setInitialStatus={setInitialStatus} /> : null}
+                {activePage === 'profile' ? <ProfilePage orders={orders} expenses={expenses} events={events} settings={settings} /> : null}
+              </motion.div>
+            </AnimatePresence>
+          ) : null}
         </main>
       </div>
 

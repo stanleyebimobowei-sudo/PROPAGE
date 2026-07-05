@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useForm, type UseFormReturn } from 'react-hook-form'
 import { z } from 'zod'
 
-import { applyPackagePriceOverrides, getAdminSettings, saveAdminOrder, trackAdminEvent } from '@/features/admin/adminData'
+import { applyPackagePriceOverrides, getAdminSettings, loadAdminSettings, saveAdminOrder, trackAdminEvent, type AdminSettings } from '@/features/admin/adminData'
 import { trackFacebookPurchase } from '@/features/admin/facebookPixel'
 import { productPackages, type ProductPackage } from '@/features/landing/data/packages'
 
@@ -53,8 +53,7 @@ type CheckoutEngineValue = {
   submitPopupOrder: () => Promise<void>
 }
 
-const packageOptionsSource = applyPackagePriceOverrides(productPackages)
-const defaultPackageId = packageOptionsSource[1]?.id ?? packageOptionsSource[0]?.id ?? ''
+const defaultPackageId = productPackages[1]?.id ?? productPackages[0]?.id ?? ''
 
 const defaultValues: CheckoutFormValues = {
   fullName: '',
@@ -79,6 +78,7 @@ function getOrderDate() {
 }
 
 export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
+  const [adminSettings, setAdminSettings] = useState<AdminSettings>(getAdminSettings())
   const [selectedPackageId, setSelectedPackageId] = useState(defaultPackageId)
   const [popupOpen, setPopupOpen] = useState(false)
   const [popupStep, setPopupStep] = useState<PopupStep>('packages')
@@ -92,13 +92,18 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
     resolver: zodResolver(checkoutFormSchema),
   })
 
+  const packageOptions = useMemo(() => applyPackagePriceOverrides(productPackages, adminSettings), [adminSettings])
+
   const selectedPackage = useMemo(
-    () => applyPackagePriceOverrides(productPackages).find((productPackage) => productPackage.id === selectedPackageId) ?? applyPackagePriceOverrides(productPackages)[0],
-    [selectedPackageId],
+    () => packageOptions.find((productPackage) => productPackage.id === selectedPackageId) ?? packageOptions[0],
+    [packageOptions, selectedPackageId],
   )
 
   useEffect(() => {
-    trackAdminEvent('visitor')
+    loadAdminSettings()
+      .then(setAdminSettings)
+      .catch(() => undefined)
+    trackAdminEvent('visitor').catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -107,7 +112,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
       if (packageId && productPackages.some((productPackage) => productPackage.id === packageId)) {
         setSelectedPackageId(packageId)
       }
-      trackAdminEvent('buy_click', packageId ? { packageId } : undefined)
+      trackAdminEvent('buy_click', packageId ? { packageId } : undefined).catch(() => undefined)
       setPopupStep('packages')
       setPopupOpen(true)
     }
@@ -134,7 +139,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
     if (packageId && productPackages.some((productPackage) => productPackage.id === packageId)) {
       setSelectedPackageId(packageId)
     }
-    trackAdminEvent('buy_click', packageId ? { packageId } : undefined)
+    trackAdminEvent('buy_click', packageId ? { packageId } : undefined).catch(() => undefined)
     setPopupStep('packages')
     setPopupOpen(true)
   }, [])
@@ -146,7 +151,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
 
   const selectPackage = useCallback((packageId: string, options?: { advancePopup?: boolean }) => {
     setSelectedPackageId(packageId)
-    trackAdminEvent('package_selected', { packageId })
+    trackAdminEvent('package_selected', { packageId }).catch(() => undefined)
     if (options?.advancePopup) {
       setPopupStep('availability')
       setAvailabilityTarget('popup')
@@ -164,7 +169,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
         status: 'Awaiting Confirmation',
       }
 
-      saveAdminOrder({
+      await saveAdminOrder({
         id: order.id,
         package: order.package,
         customer: order.customer,
@@ -173,10 +178,10 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
         status: 'New',
         source: surface,
       })
-      trackAdminEvent('form_submitted', { packageId: selectedPackage.id, surface })
-      trackAdminEvent('purchase', { packageId: selectedPackage.id, value: String(parseInt(selectedPackage.promoPrice.replace(/[^\\d]/g, ''), 10) || 0) })
+      trackAdminEvent('form_submitted', { packageId: selectedPackage.id, surface }).catch(() => undefined)
+      trackAdminEvent('purchase', { packageId: selectedPackage.id, value: String(parseInt(selectedPackage.promoPrice.replace(/[^\\d]/g, ''), 10) || 0) }).catch(() => undefined)
 
-      const endpoint = getAdminSettings().formspreeEndpoint.trim()
+      const endpoint = adminSettings.formspreeEndpoint.trim()
       if (endpoint) {
         fetch(endpoint, {
           method: 'POST',
@@ -195,7 +200,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
         setPopupOpen(true)
       }
     },
-    [selectedPackage],
+    [adminSettings.formspreeEndpoint, selectedPackage],
   )
 
   const requestInlineAvailability = form.handleSubmit(async () => {
@@ -208,7 +213,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
 
   const confirmAvailability = useCallback(async () => {
     if (availabilityTarget === 'popup') {
-      trackAdminEvent('availability_confirmed', { surface: 'popup' })
+      trackAdminEvent('availability_confirmed', { surface: 'popup' }).catch(() => undefined)
       setAvailabilityTarget(null)
       setPopupStep('form')
       return
@@ -220,7 +225,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
         setAvailabilityTarget(null)
         return
       }
-      trackAdminEvent('availability_confirmed', { surface: 'inline' })
+      trackAdminEvent('availability_confirmed', { surface: 'inline' }).catch(() => undefined)
       setAvailabilityTarget(null)
       await submitOrder(form.getValues(), 'inline')
     }
@@ -258,7 +263,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
       inlineView,
       lastOrder,
       openPopup,
-      packageOptions: applyPackagePriceOverrides(productPackages),
+      packageOptions,
       popupOpen,
       popupStep,
       requestInlineAvailability,
@@ -278,6 +283,7 @@ export function CheckoutEngineProvider({ children }: { children: ReactNode }) {
       inlineView,
       lastOrder,
       openPopup,
+      packageOptions,
       popupOpen,
       popupStep,
       requestInlineAvailability,

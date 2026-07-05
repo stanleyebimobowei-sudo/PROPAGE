@@ -28,3 +28,45 @@ create table if not exists admin_settings_snapshots (
   settings jsonb not null,
   created_at timestamptz not null
 );
+
+create index if not exists orders_created_at_idx on orders (created_at desc);
+create index if not exists expenses_created_at_idx on expenses (created_at desc);
+create index if not exists analytics_events_created_at_idx on analytics_events (created_at desc);
+create index if not exists admin_settings_snapshots_created_at_idx on admin_settings_snapshots (created_at desc);
+
+alter table orders enable row level security;
+alter table expenses enable row level security;
+alter table analytics_events enable row level security;
+alter table admin_settings_snapshots enable row level security;
+
+drop policy if exists "Allow public admin dashboard access" on orders;
+create policy "Allow public admin dashboard access"
+  on orders
+  for all
+  to anon
+  using (true)
+  with check (true);
+
+drop policy if exists "Allow public admin dashboard access" on expenses;
+create policy "Allow public admin dashboard access"
+  on expenses
+  for all
+  to anon
+  using (true)
+  with check (true);
+
+drop policy if exists "Allow public admin dashboard access" on analytics_events;
+create policy "Allow public admin dashboard access"
+  on analytics_events
+  for all
+  to anon
+  using (true)
+  with check (true);
+
+drop policy if exists "Allow public admin dashboard access" on admin_settings_snapshots;
+create policy "Allow public admin dashboard access"
+  on admin_settings_snapshots
+  for all
+  to anon
+  using (true)
+  with check (true);

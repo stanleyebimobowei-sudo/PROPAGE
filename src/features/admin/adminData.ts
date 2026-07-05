@@ -1,4 +1,4 @@
-﻿import { supabaseInsert, supabaseUpdate } from '@/features/admin/supabaseRest'
+import { isSupabaseConfigured, supabaseDelete, supabaseInsert, supabaseSelect, supabaseUpdate, supabaseUpsert } from '@/features/admin/supabaseRest'
 import type { CheckoutFormValues } from '@/features/checkout/hooks/CheckoutEngine'
 import type { ProductPackage } from '@/features/landing/data/packages'
 
@@ -69,12 +69,7 @@ export type AdminSettings = {
   packagePrices: Record<string, PackagePriceOverride>
 }
 
-const ordersKey = 'kog-admin-orders'
-const expensesKey = 'kog-admin-expenses'
-const eventsKey = 'kog-admin-events'
-const settingsKey = 'kog-admin-settings'
-
-const defaultSettings: AdminSettings = {
+export const defaultSettings: AdminSettings = {
   formspreeEndpoint: '',
   facebookPixelId: '',
   thankYouPath: '/thank-you',
@@ -83,30 +78,36 @@ const defaultSettings: AdminSettings = {
   packagePrices: {},
 }
 
-function readJson<T>(key: string, fallback: T): T {
-  try {
-    const value = window.localStorage.getItem(key)
-    if (!value) {
-      return fallback
-    }
+let cachedSettings = defaultSettings
 
-    const parsed = JSON.parse(value) as unknown
-    if (Array.isArray(fallback)) {
-      return (Array.isArray(parsed) ? parsed : fallback) as T
-    }
-
-    if (fallback && typeof fallback === 'object' && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return { ...fallback, ...parsed } as T
-    }
-
-    return parsed as T
-  } catch {
-    return fallback
-  }
+type AdminOrderRow = {
+  id: string
+  customer: CheckoutFormValues
+  package: ProductPackage
+  status: AdminOrderStatus
+  created_at: string
+  estimated_delivery: string | null
+  source: 'popup' | 'inline' | null
 }
 
-function writeJson<T>(key: string, value: T) {
-  window.localStorage.setItem(key, JSON.stringify(value))
+type AdminExpenseRow = {
+  id: string
+  amount: number | string
+  purpose: string
+  order_id: string | null
+  created_at: string
+}
+
+type AdminEventRow = {
+  id: string
+  type: AdminEventType
+  metadata: Record<string, string> | null
+  created_at: string
+}
+
+type AdminSettingsRow = {
+  settings: Partial<AdminSettings>
+  created_at: string
 }
 
 function createId(prefix: string) {
@@ -117,22 +118,61 @@ function emitDataChanged() {
   window.dispatchEvent(new CustomEvent('admin:data-changed'))
 }
 
-function syncInsert(table: string, payload: unknown) {
-  supabaseInsert(table, payload).catch(() => undefined)
+function requireSupabase() {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
+  }
 }
 
-function syncUpdate(table: string, id: string, payload: unknown) {
-  supabaseUpdate(table, id, payload).catch(() => undefined)
+function normalizeSettings(settings?: Partial<AdminSettings>): AdminSettings {
+  return {
+    ...defaultSettings,
+    ...settings,
+    capitalTopUps: Array.isArray(settings?.capitalTopUps) ? settings.capitalTopUps : defaultSettings.capitalTopUps,
+    packagePrices: settings?.packagePrices ?? defaultSettings.packagePrices,
+  }
 }
 
-export function getAdminOrders() {
-  return readJson<AdminOrder[]>(ordersKey, [])
+function mapOrder(row: AdminOrderRow): AdminOrder {
+  return {
+    id: row.id,
+    customer: row.customer,
+    package: row.package,
+    status: row.status,
+    createdAt: row.created_at,
+    estimatedDelivery: row.estimated_delivery ?? '1-3 Business Days',
+    source: row.source ?? 'inline',
+  }
 }
 
-export function saveAdminOrder(order: AdminOrder) {
-  const orders = [order, ...getAdminOrders()]
-  writeJson(ordersKey, orders)
-  syncInsert('orders', {
+function mapExpense(row: AdminExpenseRow): AdminExpense {
+  return {
+    id: row.id,
+    amount: Number(row.amount) || 0,
+    purpose: row.purpose,
+    orderId: row.order_id ?? undefined,
+    createdAt: row.created_at,
+  }
+}
+
+function mapEvent(row: AdminEventRow): AdminEvent {
+  return {
+    id: row.id,
+    type: row.type,
+    metadata: row.metadata ?? undefined,
+    createdAt: row.created_at,
+  }
+}
+
+export async function getAdminOrders() {
+  requireSupabase()
+  const rows = await supabaseSelect<AdminOrderRow>('orders', 'select=*&order=created_at.desc')
+  return rows.map(mapOrder)
+}
+
+export async function saveAdminOrder(order: AdminOrder) {
+  requireSupabase()
+  await supabaseUpsert('orders', {
     id: order.id,
     customer: order.customer,
     package: order.package,
@@ -144,32 +184,32 @@ export function saveAdminOrder(order: AdminOrder) {
   emitDataChanged()
 }
 
-export function updateAdminOrderStatus(orderId: string, status: AdminOrderStatus) {
-  const orders = getAdminOrders().map((order) => (order.id === orderId ? { ...order, status } : order))
-  writeJson(ordersKey, orders)
-  syncUpdate('orders', orderId, { status })
+export async function updateAdminOrderStatus(orderId: string, status: AdminOrderStatus) {
+  requireSupabase()
+  await supabaseUpdate('orders', orderId, { status })
   if (status === 'Delivered') {
-    trackAdminEvent('delivered')
+    trackAdminEvent('delivered').catch(() => undefined)
   }
   if (status === 'Fulfilled') {
-    trackAdminEvent('fulfilled')
+    trackAdminEvent('fulfilled').catch(() => undefined)
   }
   emitDataChanged()
 }
 
-export function deleteAdminOrder(orderId: string) {
-  writeJson(
-    ordersKey,
-    getAdminOrders().filter((order) => order.id !== orderId),
-  )
+export async function deleteAdminOrder(orderId: string) {
+  requireSupabase()
+  await supabaseDelete('orders', orderId)
   emitDataChanged()
 }
 
-export function getAdminExpenses() {
-  return readJson<AdminExpense[]>(expensesKey, [])
+export async function getAdminExpenses() {
+  requireSupabase()
+  const rows = await supabaseSelect<AdminExpenseRow>('expenses', 'select=*&order=created_at.desc')
+  return rows.map(mapExpense)
 }
 
-export function addAdminExpense(amount: number, purpose: string, orderId?: string) {
+export async function addAdminExpense(amount: number, purpose: string, orderId?: string) {
+  requireSupabase()
   const expense: AdminExpense = {
     id: createId('expense'),
     amount,
@@ -177,8 +217,8 @@ export function addAdminExpense(amount: number, purpose: string, orderId?: strin
     orderId,
     createdAt: new Date().toISOString(),
   }
-  writeJson(expensesKey, [expense, ...getAdminExpenses()])
-  syncInsert('expenses', {
+
+  await supabaseInsert('expenses', {
     id: expense.id,
     amount: expense.amount,
     purpose: expense.purpose,
@@ -188,19 +228,22 @@ export function addAdminExpense(amount: number, purpose: string, orderId?: strin
   emitDataChanged()
 }
 
-export function getAdminEvents() {
-  return readJson<AdminEvent[]>(eventsKey, [])
+export async function getAdminEvents() {
+  requireSupabase()
+  const rows = await supabaseSelect<AdminEventRow>('analytics_events', 'select=*&order=created_at.desc&limit=2000')
+  return rows.map(mapEvent)
 }
 
-export function trackAdminEvent(type: AdminEventType, metadata?: Record<string, string>) {
+export async function trackAdminEvent(type: AdminEventType, metadata?: Record<string, string>) {
+  requireSupabase()
   const event: AdminEvent = {
     id: createId('event'),
     type,
     createdAt: new Date().toISOString(),
     metadata,
   }
-  writeJson(eventsKey, [event, ...getAdminEvents()].slice(0, 2000))
-  syncInsert('analytics_events', {
+
+  await supabaseInsert('analytics_events', {
     id: event.id,
     type: event.type,
     metadata: event.metadata,
@@ -210,33 +253,39 @@ export function trackAdminEvent(type: AdminEventType, metadata?: Record<string, 
 }
 
 export function getAdminSettings(): AdminSettings {
-  return readJson<AdminSettings>(settingsKey, defaultSettings)
+  return cachedSettings
 }
 
-export function saveAdminSettings(settings: AdminSettings) {
-  writeJson(settingsKey, { ...defaultSettings, ...settings })
-  syncInsert('admin_settings_snapshots', { settings: { ...defaultSettings, ...settings }, created_at: new Date().toISOString() })
+export async function loadAdminSettings() {
+  requireSupabase()
+  const rows = await supabaseSelect<AdminSettingsRow>('admin_settings_snapshots', 'select=settings,created_at&order=created_at.desc&limit=1')
+  cachedSettings = normalizeSettings(rows[0]?.settings)
+  return cachedSettings
+}
+
+export async function saveAdminSettings(settings: AdminSettings) {
+  requireSupabase()
+  cachedSettings = normalizeSettings(settings)
+  await supabaseInsert('admin_settings_snapshots', { settings: cachedSettings, created_at: new Date().toISOString() })
   emitDataChanged()
 }
 
-export function addCapitalTopUp(amount: number, note: string) {
-  const settings = getAdminSettings()
+export async function addCapitalTopUp(amount: number, note: string, settings = getAdminSettings()) {
   const topUp: CapitalTopUp = {
     id: createId('capital'),
     amount,
     note,
     createdAt: new Date().toISOString(),
   }
-  saveAdminSettings({ ...settings, capitalTopUps: [topUp, ...settings.capitalTopUps] })
+  await saveAdminSettings({ ...settings, capitalTopUps: [topUp, ...settings.capitalTopUps] })
 }
 
-export function getTotalStartupCapital() {
-  const settings = getAdminSettings()
+export function getTotalStartupCapital(settings = getAdminSettings()) {
   return settings.startupCapital + settings.capitalTopUps.reduce((sum, topUp) => sum + topUp.amount, 0)
 }
 
-export function applyPackagePriceOverrides(packages: ProductPackage[]) {
-  const overrides = getAdminSettings().packagePrices
+export function applyPackagePriceOverrides(packages: ProductPackage[], settings = getAdminSettings()) {
+  const overrides = settings.packagePrices
   return packages.map((productPackage) => {
     const override = overrides[productPackage.id]
     if (!override) {
