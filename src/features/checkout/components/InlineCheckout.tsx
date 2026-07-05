@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { ShieldCheck, Truck } from 'lucide-react'
 
 import brandSticker from '@/assets/brand-sticker-transparent.png'
@@ -53,8 +53,29 @@ export function InlineCheckout() {
           </div>
         </div>
 
-        {inlineView === 'success' ? <SuccessScreen context="inline" /> : <CheckoutForm variant="inline" onSubmit={requestInlineAvailability} />}
+        {inlineView === 'success' ? null : <CheckoutForm variant="inline" onSubmit={requestInlineAvailability} />}
       </motion.div>
+
+      <AnimatePresence>
+        {inlineView === 'success' ? (
+          <motion.div
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-50 grid place-items-center bg-black/66 p-3 backdrop-blur-xl"
+            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+          >
+            <motion.div
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              className="max-h-[calc(100svh-1.5rem)] w-full max-w-xl overflow-y-auto rounded-[34px] border border-white/14 bg-white/[0.08] p-4 shadow-[0_34px_120px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.18)] backdrop-blur-2xl sm:p-5"
+              exit={{ opacity: 0, y: 18, scale: 0.98 }}
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+            >
+              <SuccessScreen context="inline" />
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </section>
   )
 }

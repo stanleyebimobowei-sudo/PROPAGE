@@ -79,16 +79,18 @@ function SelectedPackagePanel({
   selectedPackage,
   onChange,
   variant,
+  className = '',
 }: {
   selectedPackage: ProductPackage
   onChange: () => void
   variant: 'popup' | 'inline'
+  className?: string
 }) {
   return (
     <aside
       className={`rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] lg:sticky lg:top-24 ${
         variant === 'popup' ? 'lg:top-0' : ''
-      }`}
+      } ${className}`}
     >
       <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-ink-950/72">
         <img src={selectedPackage.image} alt={selectedPackage.imageAlt} className="h-48 w-full object-cover lg:h-56" loading="lazy" />
@@ -181,11 +183,7 @@ export function CheckoutForm({ variant, onSubmit }: CheckoutFormProps) {
         void onSubmit()
       }}
     >
-      {!isInline ? (
-        <SelectedPackagePanel selectedPackage={selectedPackage} onChange={() => setPopupStep('packages')} variant="popup" />
-      ) : null}
-
-      <div className="grid gap-5 rounded-[30px] border border-white/10 bg-white/[0.035] p-4 sm:p-5 lg:p-6">
+      <div className={`grid gap-5 rounded-[30px] border border-white/10 bg-white/[0.035] p-4 sm:p-5 lg:p-6 ${!isInline ? 'lg:col-start-2 lg:row-start-1' : ''}`}>
         <div className="grid gap-2">
           <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-mint-400">Delivery Details</p>
           <h3 className="font-serif text-3xl font-normal leading-none tracking-normal text-white lg:text-4xl">
@@ -239,6 +237,10 @@ export function CheckoutForm({ variant, onSubmit }: CheckoutFormProps) {
           </div>
         </div>
       </div>
+
+      {!isInline ? (
+        <SelectedPackagePanel selectedPackage={selectedPackage} onChange={() => setPopupStep('packages')} variant="popup" className="lg:col-start-1 lg:row-start-1" />
+      ) : null}
 
       {isInline ? (
         <InlinePackagePanel packageOptions={packageOptions} selectedPackageId={selectedPackageId} selectPackage={selectPackage} />

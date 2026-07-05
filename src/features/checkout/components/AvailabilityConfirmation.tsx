@@ -10,12 +10,12 @@ export function AvailabilityConfirmation({ onConfirm, onDecline }: AvailabilityC
   return (
     <motion.div
       animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      className="rounded-[32px] border border-white/12 bg-ink-950/88 p-5 text-white shadow-[0_30px_100px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.14)] backdrop-blur-2xl"
+      className="flex max-h-[calc(100svh-1.5rem)] flex-col rounded-[32px] border border-white/12 bg-ink-950/88 text-white shadow-[0_30px_100px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.14)] backdrop-blur-2xl"
       exit={{ opacity: 0, y: 18, filter: 'blur(8px)' }}
       initial={{ opacity: 0, y: 22, filter: 'blur(8px)' }}
       transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="grid gap-5">
+      <div className="grid gap-5 overflow-y-auto p-5 pb-3">
         <div className="flex items-start gap-4">
           <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-mint-400/20 bg-mint-400/10 text-mint-400">
             <PackageCheck className="size-6" aria-hidden="true" />
@@ -44,7 +44,9 @@ export function AvailabilityConfirmation({ onConfirm, onDecline }: AvailabilityC
           </div>
         </div>
 
-        <div className="grid gap-3">
+      </div>
+
+      <div className="sticky bottom-0 grid gap-3 border-t border-white/8 bg-ink-950/92 p-5 pt-3 backdrop-blur-2xl">
           <button
             type="button"
             onClick={() => void onConfirm()}
@@ -59,7 +61,6 @@ export function AvailabilityConfirmation({ onConfirm, onDecline }: AvailabilityC
           >
             NO, NOT YET
           </button>
-        </div>
       </div>
     </motion.div>
   )

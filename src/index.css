@@ -763,6 +763,20 @@ html {
   color: #f5f5f4;
 }
 
+.admin-dashboard button {
+  transform-origin: center;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+.admin-dashboard button:active {
+  transform: scale(0.96);
+}
+
 .admin-small-button,
 .admin-action-button {
   display: inline-flex;
