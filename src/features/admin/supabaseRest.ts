@@ -1,8 +1,12 @@
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+function readEnvValue(value: string | undefined) {
+  return value?.trim() || undefined
+}
+
+const supabaseUrl = readEnvValue(import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/+$/, '')
+const supabaseAnonKey = readEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)
 
 export function isSupabaseConfigured() {
-  return Boolean(supabaseUrl && supabaseAnonKey)
+  return Boolean(supabaseUrl && supabaseAnonKey && supabaseAnonKey.split('.').length === 3)
 }
 
 function headers(prefer?: string) {

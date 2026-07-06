@@ -1,4 +1,4 @@
-﻿import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeft,
   BarChart3,
@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { isSupabaseConfigured } from '@/features/admin/supabaseRest'
 
 import {
   addAdminExpense,
@@ -944,7 +945,13 @@ function SettingsPage({ orders, expenses, events, settings }: { orders: AdminOrd
             </div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm font-semibold leading-6 text-stone-400">
-            Supabase REST is ready. Add <span className="text-white">VITE_SUPABASE_URL</span> and <span className="text-white">VITE_SUPABASE_ANON_KEY</span> in Netlify environment variables, then create tables: orders, expenses, analytics_events, admin_settings_snapshots.
+            {isSupabaseConfigured() ? (
+              <>Supabase REST is connected. Orders, expenses, analytics, and settings are syncing to your database.</>
+            ) : (
+              <>
+                Supabase is not configured in this running build, so admin data is stored in this browser only. Add <span className="text-white">VITE_SUPABASE_URL</span> and <span className="text-white">VITE_SUPABASE_ANON_KEY</span>, then restart or redeploy.
+              </>
+            )}
           </div>
         </div>
       </section>

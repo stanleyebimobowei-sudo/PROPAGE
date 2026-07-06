@@ -80,6 +80,12 @@ export const defaultSettings: AdminSettings = {
 
 let cachedSettings = defaultSettings
 
+const storageKeys = {
+  orders: 'kog-admin-orders',
+  expenses: 'kog-admin-expenses',
+  events: 'kog-admin-events',
+  settings: 'kog-admin-settings',
+}
 type AdminOrderRow = {
   id: string
   customer: CheckoutFormValues
@@ -118,10 +124,29 @@ function emitDataChanged() {
   window.dispatchEvent(new CustomEvent('admin:data-changed'))
 }
 
-function requireSupabase() {
-  if (!isSupabaseConfigured()) {
-    throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
+function readStorage<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') {
+    return fallback
   }
+
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeStorage<T>(key: string, value: T) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+function sortByNewest<T extends { createdAt: string }>(items: T[]) {
+  return [...items].sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
 }
 
 function normalizeSettings(settings?: Partial<AdminSettings>): AdminSettings {
@@ -165,13 +190,22 @@ function mapEvent(row: AdminEventRow): AdminEvent {
 }
 
 export async function getAdminOrders() {
-  requireSupabase()
+  if (!isSupabaseConfigured()) {
+    return sortByNewest(readStorage<AdminOrder[]>(storageKeys.orders, []))
+  }
+
   const rows = await supabaseSelect<AdminOrderRow>('orders', 'select=*&order=created_at.desc')
   return rows.map(mapOrder)
 }
 
 export async function saveAdminOrder(order: AdminOrder) {
-  requireSupabase()
+  if (!isSupabaseConfigured()) {
+    const orders = readStorage<AdminOrder[]>(storageKeys.orders, [])
+    writeStorage(storageKeys.orders, sortByNewest([order, ...orders.filter((item) => item.id !== order.id)]))
+    emitDataChanged()
+    return
+  }
+
   await supabaseUpsert('orders', {
     id: order.id,
     customer: order.customer,
@@ -185,8 +219,15 @@ export async function saveAdminOrder(order: AdminOrder) {
 }
 
 export async function updateAdminOrderStatus(orderId: string, status: AdminOrderStatus) {
-  requireSupabase()
-  await supabaseUpdate('orders', orderId, { status })
+  if (isSupabaseConfigured()) {
+    await supabaseUpdate('orders', orderId, { status })
+  } else {
+    const orders = readStorage<AdminOrder[]>(storageKeys.orders, [])
+    writeStorage(
+      storageKeys.orders,
+      orders.map((order) => (order.id === orderId ? { ...order, status } : order)),
+    )
+  }
   if (status === 'Delivered') {
     trackAdminEvent('delivered').catch(() => undefined)
   }
@@ -197,25 +238,40 @@ export async function updateAdminOrderStatus(orderId: string, status: AdminOrder
 }
 
 export async function deleteAdminOrder(orderId: string) {
-  requireSupabase()
-  await supabaseDelete('orders', orderId)
+  if (isSupabaseConfigured()) {
+    await supabaseDelete('orders', orderId)
+  } else {
+    writeStorage(
+      storageKeys.orders,
+      readStorage<AdminOrder[]>(storageKeys.orders, []).filter((order) => order.id !== orderId),
+    )
+  }
+
   emitDataChanged()
 }
 
 export async function getAdminExpenses() {
-  requireSupabase()
+  if (!isSupabaseConfigured()) {
+    return sortByNewest(readStorage<AdminExpense[]>(storageKeys.expenses, []))
+  }
+
   const rows = await supabaseSelect<AdminExpenseRow>('expenses', 'select=*&order=created_at.desc')
   return rows.map(mapExpense)
 }
 
 export async function addAdminExpense(amount: number, purpose: string, orderId?: string) {
-  requireSupabase()
   const expense: AdminExpense = {
     id: createId('expense'),
     amount,
     purpose,
     orderId,
     createdAt: new Date().toISOString(),
+  }
+
+  if (!isSupabaseConfigured()) {
+    writeStorage(storageKeys.expenses, sortByNewest([expense, ...readStorage<AdminExpense[]>(storageKeys.expenses, [])]))
+    emitDataChanged()
+    return
   }
 
   await supabaseInsert('expenses', {
@@ -229,18 +285,26 @@ export async function addAdminExpense(amount: number, purpose: string, orderId?:
 }
 
 export async function getAdminEvents() {
-  requireSupabase()
+  if (!isSupabaseConfigured()) {
+    return sortByNewest(readStorage<AdminEvent[]>(storageKeys.events, [])).slice(0, 2000)
+  }
+
   const rows = await supabaseSelect<AdminEventRow>('analytics_events', 'select=*&order=created_at.desc&limit=2000')
   return rows.map(mapEvent)
 }
 
 export async function trackAdminEvent(type: AdminEventType, metadata?: Record<string, string>) {
-  requireSupabase()
   const event: AdminEvent = {
     id: createId('event'),
     type,
     createdAt: new Date().toISOString(),
     metadata,
+  }
+
+  if (!isSupabaseConfigured()) {
+    writeStorage(storageKeys.events, sortByNewest([event, ...readStorage<AdminEvent[]>(storageKeys.events, [])]).slice(0, 2000))
+    emitDataChanged()
+    return
   }
 
   await supabaseInsert('analytics_events', {
@@ -257,15 +321,24 @@ export function getAdminSettings(): AdminSettings {
 }
 
 export async function loadAdminSettings() {
-  requireSupabase()
+  if (!isSupabaseConfigured()) {
+    cachedSettings = normalizeSettings(readStorage<Partial<AdminSettings>>(storageKeys.settings, defaultSettings))
+    return cachedSettings
+  }
+
   const rows = await supabaseSelect<AdminSettingsRow>('admin_settings_snapshots', 'select=settings,created_at&order=created_at.desc&limit=1')
   cachedSettings = normalizeSettings(rows[0]?.settings)
   return cachedSettings
 }
 
 export async function saveAdminSettings(settings: AdminSettings) {
-  requireSupabase()
   cachedSettings = normalizeSettings(settings)
+  if (!isSupabaseConfigured()) {
+    writeStorage(storageKeys.settings, cachedSettings)
+    emitDataChanged()
+    return
+  }
+
   await supabaseInsert('admin_settings_snapshots', { settings: cachedSettings, created_at: new Date().toISOString() })
   emitDataChanged()
 }
